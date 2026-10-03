@@ -81,3 +81,10 @@ CMD ["node" ,"dist/main"]
 # - --rm: delete the container when it stops (keeps things tidy)
 # - -p 3000:3000: connect your laptop's port 3000 to the box's port 3000
 # - --env-file .env: give the box your environment variables at run time. They aren't baked in, so your .dockerignore rule still holds.
+
+
+# Why multi-stage builds? 🧁
+
+# Multi-stage builds are like baking a cake in stages. You have a kitchen (the builder stage) where you mix all the ingredients and bake the cake. Then you have a serving plate (the runner stage) where you put only the finished cake, not the messy kitchen. This keeps your final image SMALLER in size and clean.
+
+# (Most of the remaining 258 MB of the current image is Node itself plus Alpine Linux. That's normal for a Node app.)
