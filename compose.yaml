@@ -1,4 +1,20 @@
 services:
+  app:
+    build: .
+    container_name: url-shortener-app
+    env_file: .env
+    environment:
+      # Inside compose, services reach each other by service name, not localhost.
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+    ports:
+      - '3000:3000'
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
   db:
     image: postgres:18
     container_name: url-shortener-db
@@ -10,6 +26,12 @@ services:
       - '${POSTGRES_PORT}:5432'
     volumes:
       - pgdata:/var/lib/postgresql
+    # App runs `select 1` on boot and exits if Postgres isn't accepting connections yet.
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 2s
+      timeout: 3s
+      retries: 15
 
   redis:
     image: redis:8

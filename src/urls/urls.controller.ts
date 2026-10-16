@@ -13,7 +13,7 @@ import { ShortenUrlDto } from './dto/shorten-url.dto.js';
 import { nanoid } from 'nanoid';
 import { DRIZZLE, type Database } from '../database/database.module.js';
 import { clicks, urls } from '../database/schema.js';
-import { DrizzleQueryError, eq } from 'drizzle-orm';
+import { DrizzleQueryError } from 'drizzle-orm';
 import { type Redis } from 'ioredis';
 import { REDIS } from '../redis/redis.module.js';
 
@@ -31,26 +31,23 @@ export class UrlsController {
     while (true) {
       try {
         const shortUrl = nanoid(8);
-        await this.db
-          .insert(urls)
-          .values({
-            originalUrl: url,
-            shortCode: shortUrl,
-          })
-          .returning();
+        await this.db.insert(urls).values({
+          originalUrl: url,
+          shortCode: shortUrl,
+        });
         return { shortUrl, originalUrl: url };
       } catch (error) {
         const isCollision =
           error instanceof DrizzleQueryError &&
           (error.cause as { code?: string })?.code === '23505'; // Unique violation error code for PostgreSQL
-        if (isCollision && attemptCount < 5) {
+        if (!isCollision) throw error; // Not a collision: surface the real error
+        if (attemptCount < 5) {
           attemptCount++;
-
-          continue; // Retry if there's a collision
+          continue; // Retry with a new code
         }
         throw new InternalServerErrorException(
           'Could not generate a unique short code',
-        ); // Rethrow if it's a different error
+        );
       }
     }
   }
@@ -58,24 +55,9 @@ export class UrlsController {
   @Get('/:shortCode')
   @Redirect()
   async orignalUrl(@Param('shortCode') shortCode: string) {
-    // const urlRecord = await this.db
-    //   .select()
-    //   .from(urls)
-    //   .where(eq(urls.shortCode, shortCode));
-    // console.log('urlRecord', urlRecord);
-    // expected response
-    //     urlRecord = [
-    //     {
-    //         "id": "01a0cf3a-8d6a-7862-933a-82d3585e5db5",
-    //         "originalUrl": "http://example.com",
-    //         "shortCode": "AY4tEBAX",
-    //         "createdAt": "2026-09-23T17:05:16.137Z"
-    //     }
-    // ]
-
     const cacheKey = `url:${shortCode}`;
 
-    let cached = await this.redis.hgetall(cacheKey);
+    const cached = await this.redis.hgetall(cacheKey);
 
     let originalUrl = '';
     let urlId = '';
@@ -89,12 +71,6 @@ export class UrlsController {
       const urlRecord = await this.db.query.urls.findFirst({
         where: { shortCode },
       });
-      //response
-      //{
-      // "id": "01a0cf3a-8d6a-7862-933a-82d3585e5db5",
-      // "originalUrl": "http://example.com",
-      // "shortCode": "AY4tEBAX",
-      // "createdAt": "2026-09-23T17:05:16.137Z"
       if (!urlRecord) {
         throw new NotFoundException('Short code not found');
       }
